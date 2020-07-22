@@ -73,8 +73,8 @@ uint16_t txBuf[BUF_SAMPLES];
 // block at any point in time
 
 float32_t	*coeffs;
-
-float32_t	state[SAMPLES/2 + NUM_TAPS - 1];
+float32_t	stateLeft[SAMPLES/2 + NUM_TAPS - 1];
+float32_t	stateRight[SAMPLES/2 + NUM_TAPS - 1];
 
 float32_t	srcLeft[SAMPLES/2];
 float32_t	srcRight[SAMPLES/2];
@@ -82,7 +82,8 @@ float32_t	destLeft[SAMPLES/2];
 float32_t	destRight[SAMPLES/2];
 
 arm_status stat;
-arm_fir_instance_f32 arm_inst;
+arm_fir_instance_f32 arm_inst_left;
+arm_fir_instance_f32 arm_inst_right;
 
 void doComplete( int m );
 
@@ -148,10 +149,18 @@ int main(void)
   coeffs = band_pass_2_6;
 
   arm_fir_init_f32(
-		  &arm_inst,
+		  &arm_inst_left,
 		  NUM_TAPS,
-		  &coeffs[0],
-		  &state[0],
+		  &minus45Coeffs[0],
+		  &stateLeft[0],
+		  SAMPLES/2
+  );
+
+  arm_fir_init_f32(
+		  &arm_inst_right,
+		  NUM_TAPS,
+		  &plus45Coeffs[0],
+		  &stateRight[0],
 		  SAMPLES/2
   );
 
@@ -480,9 +489,16 @@ void doComplete( int b )
     HAL_GPIO_WritePin( GPIOE, GPIO_PIN_4, GPIO_PIN_SET );
 
 	arm_fir_f32	(
-			&arm_inst,
+			&arm_inst_left,
 			srcLeft,
 			destLeft,
+			SAMPLES/2
+	);
+
+	arm_fir_f32	(
+			&arm_inst_right,
+			srcRight,
+			destRight,
 			SAMPLES/2
 	);
 
@@ -492,7 +508,7 @@ void doComplete( int b )
 	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
 	  {
 		  int lval = destLeft[i];
-		  int rval = srcRight[i];
+		  int rval = destRight[i];
 
 		  txBuf[pos] = (lval>>16)&0xFFFF;
 		  txBuf[pos+1] = lval&0xFFFF;

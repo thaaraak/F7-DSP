@@ -99,6 +99,7 @@ NVIC.BusFault_IRQn=true\:0\:0\:false\:false\:true\:true\:false
 NVIC.DMA1_Stream1_IRQn=true\:0\:0\:false\:false\:true\:false\:true
 NVIC.DMA1_Stream5_IRQn=true\:0\:0\:false\:false\:true\:false\:true
 NVIC.DebugMonitor_IRQn=true\:0\:0\:false\:false\:true\:true\:false
+NVIC.EXTI15_10_IRQn=true\:0\:0\:false\:false\:true\:true\:true
 NVIC.ForceEnableDMAVector=true
 NVIC.HardFault_IRQn=true\:0\:0\:false\:false\:true\:true\:false
 NVIC.MemoryManagement_IRQn=true\:0\:0\:false\:false\:true\:true\:false

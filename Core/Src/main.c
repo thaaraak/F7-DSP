@@ -515,6 +515,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USB_VBUS_GPIO_Port, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
 }
 
 /* USER CODE BEGIN 4 */
@@ -604,6 +608,40 @@ void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
     UNUSED(hi2s);
 	rxHalfComplete = 1;
+}
+
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  /* Prevent unused argument(s) compilation warning */
+  UNUSED(GPIO_Pin);
+
+  if ( coeffsLeft == plus45Coeffs )
+  {
+	  coeffsLeft = minus45Coeffs;
+	  coeffsRight = plus45Coeffs;
+  }
+  else
+  {
+	  coeffsRight = minus45Coeffs;
+	  coeffsLeft = plus45Coeffs;
+  }
+
+	  arm_fir_init_f32(
+			  &arm_inst_left,
+			  NUM_TAPS,
+			  coeffsLeft,
+			  &stateLeft[0],
+			  SAMPLES/2
+	  );
+
+	  arm_fir_init_f32(
+			  &arm_inst_right,
+			  NUM_TAPS,
+			  coeffsRight,
+			  &stateRight[0],
+			  SAMPLES/2
+	  );
 }
 
 

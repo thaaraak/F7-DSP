@@ -616,6 +616,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   /* Prevent unused argument(s) compilation warning */
   UNUSED(GPIO_Pin);
 
+  // Swap upper/lower sideband
   if ( coeffsLeft == plus45Coeffs )
   {
 	  coeffsLeft = minus45Coeffs;

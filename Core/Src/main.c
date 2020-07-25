@@ -27,6 +27,7 @@
 #include <arm_math.h>
 #include <string.h>
 #include <stdio.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,6 +45,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+
+I2C_HandleTypeDef hi2c2;
 
 I2S_HandleTypeDef hi2s2;
 I2S_HandleTypeDef hi2s3;
@@ -72,7 +75,8 @@ uint16_t txBuf[BUF_SAMPLES];
 // need half the SAMPLE size as we will only be processing half the SAMPLE
 // block at any point in time
 
-float32_t	*coeffs;
+float32_t	*coeffsLeft;
+float32_t	*coeffsRight;
 float32_t	stateLeft[SAMPLES/2 + NUM_TAPS - 1];
 float32_t	stateRight[SAMPLES/2 + NUM_TAPS - 1];
 
@@ -85,6 +89,7 @@ arm_status stat;
 arm_fir_instance_f32 arm_inst_left;
 arm_fir_instance_f32 arm_inst_right;
 
+void setupSynth( I2C_HandleTypeDef* );
 void doComplete( int m );
 
 /* USER CODE END PV */
@@ -96,6 +101,7 @@ static void MX_DMA_Init(void);
 static void MX_I2S2_Init(void);
 static void MX_I2S3_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_I2C2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -138,6 +144,7 @@ int main(void)
   MX_I2S2_Init();
   MX_I2S3_Init();
   MX_USART3_UART_Init();
+  MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -145,13 +152,15 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-  coeffs = low_pass_3khz;
-  coeffs = band_pass_2_6;
+  //setupSynth( &hi2c2 );
+
+  coeffsRight = plus45Coeffs;
+  coeffsLeft = minus45Coeffs;
 
   arm_fir_init_f32(
 		  &arm_inst_left,
 		  NUM_TAPS,
-		  &minus45Coeffs[0],
+		  coeffsLeft,
 		  &stateLeft[0],
 		  SAMPLES/2
   );
@@ -159,7 +168,7 @@ int main(void)
   arm_fir_init_f32(
 		  &arm_inst_right,
 		  NUM_TAPS,
-		  &plus45Coeffs[0],
+		  coeffsRight,
 		  &stateRight[0],
 		  SAMPLES/2
   );
@@ -184,7 +193,7 @@ int main(void)
 		  txFullComplete = 0;
 	  }
 
-	  /* USER CODE END WHILE */
+    /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
@@ -239,7 +248,8 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USART3|RCC_PERIPHCLK_I2S;
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USART3|RCC_PERIPHCLK_I2C2
+                              |RCC_PERIPHCLK_I2S;
   PeriphClkInitStruct.PLLI2S.PLLI2SN = 430;
   PeriphClkInitStruct.PLLI2S.PLLI2SP = RCC_PLLP_DIV2;
   PeriphClkInitStruct.PLLI2S.PLLI2SR = 7;
@@ -247,10 +257,57 @@ void SystemClock_Config(void)
   PeriphClkInitStruct.PLLI2SDivQ = 1;
   PeriphClkInitStruct.I2sClockSelection = RCC_I2SCLKSOURCE_PLLI2S;
   PeriphClkInitStruct.Usart3ClockSelection = RCC_USART3CLKSOURCE_PCLK1;
+  PeriphClkInitStruct.I2c2ClockSelection = RCC_I2C2CLKSOURCE_PCLK1;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C2_Init(void)
+{
+
+  /* USER CODE BEGIN I2C2_Init 0 */
+
+  /* USER CODE END I2C2_Init 0 */
+
+  /* USER CODE BEGIN I2C2_Init 1 */
+
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.Timing = 0x20404768;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Analogue filter 
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Digital filter 
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c2, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C2_Init 2 */
+
+  /* USER CODE END I2C2_Init 2 */
+
 }
 
 /**
@@ -385,6 +442,7 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
@@ -497,7 +555,7 @@ void doComplete( int b )
 
 	arm_fir_f32	(
 			&arm_inst_right,
-			srcRight,
+			srcLeft,
 			destRight,
 			SAMPLES/2
 	);

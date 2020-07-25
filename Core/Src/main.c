@@ -152,10 +152,10 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-  //setupSynth( &hi2c2 );
+  setupSynth( &hi2c2 );
 
-  coeffsRight = plus45Coeffs;
-  coeffsLeft = minus45Coeffs;
+  coeffsLeft = plus45Coeffs;
+  coeffsRight = minus45Coeffs;
 
   arm_fir_init_f32(
 		  &arm_inst_left,

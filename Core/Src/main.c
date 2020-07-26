@@ -123,6 +123,7 @@ void printUART( char* s )
 	HAL_UART_Transmit(&huart3, (uint8_t *)s, strlen(s), HAL_MAX_DELAY );
 }
 
+
 void printMode()
 {
 	if ( mode == 0 )

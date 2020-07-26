@@ -114,6 +114,8 @@ void doEffect( int m )
 		doEcho(m);
 	else if ( mode == 2 )
 		doPhase(m);
+	else if ( mode == 3 )
+		doMultiEcho(m);
 	else
 		doFlange(m);
 }
@@ -131,6 +133,8 @@ void printMode()
 		printUART( "Mode: Echo\r\n");
 	else if ( mode == 2 )
 		printUART( "Mode: Phase\r\n");
+	else if ( mode == 3 )
+		printUART( "Mode: Multi-Echo\r\n");
 	else
 		printUART( "Mode: Flange\r\n");
 }
@@ -639,6 +643,39 @@ void doEcho( int b )
 		  delayLeft[delayPtr] = srcLeft[i];
 		  delayRight[delayPtr] = srcRight[i];
 
+		  delayPtr = (delayPtr+1) % DELAY_BUF;
+
+		  txBuf[pos] = (lval>>16)&0xFFFF;
+		  txBuf[pos+1] = lval&0xFFFF;
+		  txBuf[pos+2] = (rval>>16)&0xFFFF;
+		  txBuf[pos+3] = rval&0xFFFF;
+
+		  i++;
+	  }
+
+}
+
+void doMultiEcho( int b )
+{
+	int startBuf = b * BUF_SAMPLES / 2;
+	int endBuf = startBuf + BUF_SAMPLES / 2;
+
+	int i = 0;
+	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+	{
+		  srcLeft[i] = ( (rxBuf[pos]<<16)|rxBuf[pos+1] );
+		  srcRight[i] = ( (rxBuf[pos+2]<<16)|rxBuf[pos+3] );
+		  i++;
+	}
+
+	i = 0;
+	float32_t delayGain = 0.5;
+
+	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+	  {
+		  int lval = srcLeft[i] + delayGain * delayLeft[delayPtr];
+		  int rval = srcRight[i] + delayGain * delayRight[delayPtr];
+
 		  // Fading Echo
 		  delayLeft[delayPtr] = lval;
 		  delayRight[delayPtr] = rval;
@@ -782,7 +819,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	  /* Prevent unused argument(s) compilation warning */
 	  UNUSED(GPIO_Pin);
-	  mode = (mode+1) % 4;
+	  mode = (mode+1) % 5;
 }
 
 void changeSideband()

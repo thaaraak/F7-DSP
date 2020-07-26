@@ -98,6 +98,8 @@ arm_fir_instance_f32 arm_inst_right;
 
 void setupSynth( I2C_HandleTypeDef* );
 
+volatile int mode = 0;
+
 void doPassthru( int m );
 void doEcho( int m );
 void doPhase( int m );

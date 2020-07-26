@@ -67,6 +67,13 @@ volatile int txHalfComplete = 0;
 volatile int rxFullComplete = 0;
 volatile int txFullComplete = 0;
 
+// Delay Line
+#define	DELAY_BUF	20000
+float32_t	delayLeft[DELAY_BUF];
+float32_t	delayRight[DELAY_BUF];
+volatile int delayPtr = 0;
+volatile int t = 0;
+
 // DMA Buffers
 uint16_t rxBuf[BUF_SAMPLES];
 uint16_t txBuf[BUF_SAMPLES];
@@ -90,7 +97,11 @@ arm_fir_instance_f32 arm_inst_left;
 arm_fir_instance_f32 arm_inst_right;
 
 void setupSynth( I2C_HandleTypeDef* );
-void doComplete( int m );
+
+void doPassthru( int m );
+void doEcho( int m );
+void doPhase( int m );
+void doFlange( int m );
 
 /* USER CODE END PV */
 
@@ -181,14 +192,14 @@ int main(void)
   {
 	  if ( rxHalfComplete && txHalfComplete )
 	  {
-		  doComplete(0);
+		  doFlange(0);
 		  rxHalfComplete = 0;
 		  txHalfComplete = 0;
 	  }
 
 	  else if ( rxFullComplete && txFullComplete )
 	  {
-		  doComplete(1);
+		  doFlange(1);
 		  rxFullComplete = 0;
 		  txFullComplete = 0;
 	  }
@@ -532,7 +543,121 @@ static void MX_GPIO_Init(void)
 //		Second Half
 //
 
-void doComplete( int b )
+void doPassthru( int b )
+{
+	int startBuf = b * BUF_SAMPLES / 2;
+	int endBuf = startBuf + BUF_SAMPLES / 2;
+
+	int i = 0;
+	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+	{
+		  srcLeft[i] = ( (rxBuf[pos]<<16)|rxBuf[pos+1] );
+		  srcRight[i] = ( (rxBuf[pos+2]<<16)|rxBuf[pos+3] );
+		  i++;
+	}
+
+	i = 0;
+	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+	  {
+		  int lval = srcLeft[i];
+		  int rval = srcRight[i];
+
+		  txBuf[pos] = (lval>>16)&0xFFFF;
+		  txBuf[pos+1] = lval&0xFFFF;
+		  txBuf[pos+2] = (rval>>16)&0xFFFF;
+		  txBuf[pos+3] = rval&0xFFFF;
+
+		  i++;
+	  }
+
+}
+
+void doEcho( int b )
+{
+	int startBuf = b * BUF_SAMPLES / 2;
+	int endBuf = startBuf + BUF_SAMPLES / 2;
+
+	int i = 0;
+	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+	{
+		  srcLeft[i] = ( (rxBuf[pos]<<16)|rxBuf[pos+1] );
+		  srcRight[i] = ( (rxBuf[pos+2]<<16)|rxBuf[pos+3] );
+		  i++;
+	}
+
+	i = 0;
+	float32_t delayGain = 0.5;
+
+	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+	  {
+		  int lval = srcLeft[i] + delayGain * delayLeft[delayPtr];
+		  int rval = srcRight[i] + delayGain * delayRight[delayPtr];
+
+		  // Single Echo
+		  delayLeft[delayPtr] = srcLeft[i];
+		  delayRight[delayPtr] = srcRight[i];
+
+		  // Fading Echo
+		  delayLeft[delayPtr] = lval;
+		  delayRight[delayPtr] = rval;
+
+		  delayPtr = (delayPtr+1) % DELAY_BUF;
+
+		  txBuf[pos] = (lval>>16)&0xFFFF;
+		  txBuf[pos+1] = lval&0xFFFF;
+		  txBuf[pos+2] = (rval>>16)&0xFFFF;
+		  txBuf[pos+3] = rval&0xFFFF;
+
+		  i++;
+	  }
+
+}
+
+void doFlange( int b )
+{
+	int startBuf = b * BUF_SAMPLES / 2;
+	int endBuf = startBuf + BUF_SAMPLES / 2;
+
+	int i = 0;
+	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+	{
+		  srcLeft[i] = ( (rxBuf[pos]<<16)|rxBuf[pos+1] );
+		  srcRight[i] = ( (rxBuf[pos+2]<<16)|rxBuf[pos+3] );
+		  i++;
+	}
+
+
+	i = 0;
+	float32_t delayGain = 0.9;
+	float32_t meanDelay = 50;
+	float32_t modulationMagnitude = 40;
+
+	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+	  {
+		  int flangeCnt = (int) ( meanDelay + modulationMagnitude * arm_sin_f32( 2 * PI / 48000.0 / 10 * t ) );
+		  flangeCnt = ( delayPtr + DELAY_BUF - flangeCnt ) % DELAY_BUF;
+
+		  int lval = srcLeft[i] + 0.9 * delayLeft[flangeCnt];
+		  int rval = srcRight[i] + 0.9 * delayRight[flangeCnt];
+
+		  // Single Echo
+		  delayLeft[delayPtr] = srcLeft[i];
+		  delayRight[delayPtr] = srcRight[i];
+
+		  delayPtr = (delayPtr+1) % DELAY_BUF;
+
+		  txBuf[pos] = (lval>>16)&0xFFFF;
+		  txBuf[pos+1] = lval&0xFFFF;
+		  txBuf[pos+2] = (rval>>16)&0xFFFF;
+		  txBuf[pos+3] = rval&0xFFFF;
+
+		  i++;
+		  t++;
+	  }
+
+}
+
+void doPhase( int b )
 {
 	int startBuf = b * BUF_SAMPLES / 2;
 	int endBuf = startBuf + BUF_SAMPLES / 2;

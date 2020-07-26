@@ -100,10 +100,41 @@ void setupSynth( I2C_HandleTypeDef* );
 
 volatile int mode = 0;
 
+void doEffect(int m);
 void doPassthru( int m );
 void doEcho( int m );
 void doPhase( int m );
 void doFlange( int m );
+
+void doEffect( int m )
+{
+	if ( mode == 0 )
+		doPassthru(m);
+	else if ( mode == 1 )
+		doEcho(m);
+	else if ( mode == 2 )
+		doPhase(m);
+	else
+		doFlange(m);
+}
+
+void printUART( char* s )
+{
+	HAL_UART_Transmit(&huart3, (uint8_t *)s, strlen(s), HAL_MAX_DELAY );
+}
+
+void printMode()
+{
+	if ( mode == 0 )
+		printUART( "Mode: Passthru\r\n");
+	else if ( mode == 1 )
+		printUART( "Mode: Echo\r\n");
+	else if ( mode == 2 )
+		printUART( "Mode: Phase\r\n");
+	else
+		printUART( "Mode: Flange\r\n");
+}
+
 
 /* USER CODE END PV */
 
@@ -165,6 +196,9 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
+  printUART("\r\nBeginning Processing\r\n");
+  printMode();
+
   setupSynth( &hi2c2 );
 
   coeffsLeft = plus45Coeffs;
@@ -190,18 +224,25 @@ int main(void)
   HAL_I2S_Transmit_DMA(&hi2s3, txBuf, SAMPLES*2 );
   HAL_I2S_Receive_DMA(&hi2s2, rxBuf, SAMPLES*2 );
 
+  int lastMode = mode;
   while (1)
   {
+	  if ( lastMode != mode )
+	  {
+		  lastMode = mode;
+		  printMode();
+	  }
+
 	  if ( rxHalfComplete && txHalfComplete )
 	  {
-		  doFlange(0);
+		  doEffect(0);
 		  rxHalfComplete = 0;
 		  txHalfComplete = 0;
 	  }
 
 	  else if ( rxFullComplete && txFullComplete )
 	  {
-		  doFlange(1);
+		  doEffect(1);
 		  rxFullComplete = 0;
 		  txFullComplete = 0;
 	  }
@@ -740,8 +781,13 @@ void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  /* Prevent unused argument(s) compilation warning */
-  UNUSED(GPIO_Pin);
+	  /* Prevent unused argument(s) compilation warning */
+	  UNUSED(GPIO_Pin);
+	  mode = (mode+1) % 4;
+}
+
+void changeSideband()
+{
 
   // Swap upper/lower sideband
   if ( coeffsLeft == plus45Coeffs )

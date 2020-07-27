@@ -103,6 +103,7 @@ volatile int mode = 0;
 void doEffect(int m);
 void doPassthru( int m );
 void doEcho( int m );
+void doMultiEcho( int m );
 void doPhase( int m );
 void doFlange( int m );
 
@@ -716,8 +717,8 @@ void doFlange( int b )
 		  int flangeCnt = (int) ( meanDelay + modulationMagnitude * arm_sin_f32( 2 * PI / 48000.0 / 10 * t ) );
 		  flangeCnt = ( delayPtr + DELAY_BUF - flangeCnt ) % DELAY_BUF;
 
-		  int lval = srcLeft[i] + 0.9 * delayLeft[flangeCnt];
-		  int rval = srcRight[i] + 0.9 * delayRight[flangeCnt];
+		  int lval = srcLeft[i] + delayGain * delayLeft[flangeCnt];
+		  int rval = srcRight[i] + delayGain * delayRight[flangeCnt];
 
 		  // Single Echo
 		  delayLeft[delayPtr] = srcLeft[i];

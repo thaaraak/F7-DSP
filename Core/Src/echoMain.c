@@ -67,6 +67,13 @@ volatile int txHalfComplete = 0;
 volatile int rxFullComplete = 0;
 volatile int txFullComplete = 0;
 
+// Delay Line
+#define	DELAY_BUF	20000
+float32_t	delayLeft[DELAY_BUF];
+float32_t	delayRight[DELAY_BUF];
+volatile int delayPtr = 0;
+volatile int t = 0;
+
 // DMA Buffers
 uint16_t rxBuf[BUF_SAMPLES];
 uint16_t txBuf[BUF_SAMPLES];
@@ -76,7 +83,9 @@ float32_t	srcRight[SAMPLES/2];
 float32_t	destLeft[SAMPLES/2];
 float32_t	destRight[SAMPLES/2];
 
-void doPassthru( int m );
+void doEcho( int m );
+void doMultiEcho( int m );
+
 
 /* USER CODE END PV */
 
@@ -138,6 +147,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
+
   HAL_I2S_Transmit_DMA(&hi2s3, txBuf, SAMPLES*2 );
   HAL_I2S_Receive_DMA(&hi2s2, rxBuf, SAMPLES*2 );
 
@@ -145,14 +155,14 @@ int main(void)
   {
 	  if ( rxHalfComplete && txHalfComplete )
 	  {
-		  doPassthru(0);
+		  doEcho(0);
 		  rxHalfComplete = 0;
 		  txHalfComplete = 0;
 	  }
 
 	  else if ( rxFullComplete && txFullComplete )
 	  {
-		  doPassthru(1);
+		  doEcho(1);
 		  rxFullComplete = 0;
 		  txFullComplete = 0;
 	  }
@@ -414,7 +424,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOG_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_4|GPIO_PIN_5, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, GPIO_PIN_RESET);
@@ -425,8 +435,8 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(USB_PowerSwitchOn_GPIO_Port, USB_PowerSwitchOn_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PE3 PE4 PE5 PE6 */
-  GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6;
+  /*Configure GPIO pins : PE4 PE5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -496,11 +506,9 @@ static void MX_GPIO_Init(void)
 //		Second Half
 //
 
-void doPassthru( int b )
+
+void doEcho( int b )
 {
-
-    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_5, GPIO_PIN_SET );
-
 	int startBuf = b * BUF_SAMPLES / 2;
 	int endBuf = startBuf + BUF_SAMPLES / 2;
 
@@ -513,10 +521,22 @@ void doPassthru( int b )
 	}
 
 	i = 0;
+	float32_t delayGain = 0.5;
+
 	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
 	  {
-		  int lval = srcLeft[i];
-		  int rval = srcRight[i];
+		  int lval = srcLeft[i] + delayGain * delayLeft[delayPtr];
+		  int rval = srcRight[i] + delayGain * delayRight[delayPtr];
+
+		  // Single Echo
+		  delayLeft[delayPtr] = srcLeft[i];
+		  delayRight[delayPtr] = srcRight[i];
+
+		  // Multi Echo
+		  delayLeft[delayPtr] = lval;
+		  delayRight[delayPtr] = rval;
+
+		  delayPtr = (delayPtr+1) % DELAY_BUF;
 
 		  txBuf[pos] = (lval>>16)&0xFFFF;
 		  txBuf[pos+1] = lval&0xFFFF;
@@ -526,16 +546,13 @@ void doPassthru( int b )
 		  i++;
 	  }
 
-    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_5, GPIO_PIN_RESET );
-
 }
+
 
 void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
 	UNUSED(hi2s);
 	txFullComplete = 1;
-    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_3, GPIO_PIN_SET );
-    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_3, GPIO_PIN_RESET );
 }
 
 
@@ -543,16 +560,12 @@ void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
     UNUSED(hi2s);
 	rxFullComplete = 1;
-    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_4, GPIO_PIN_SET );
-    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_4, GPIO_PIN_RESET );
 }
 
 void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
 	UNUSED(hi2s);
 	txHalfComplete = 1;
-    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_3, GPIO_PIN_SET );
-    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_3, GPIO_PIN_RESET );
 }
 
 
@@ -560,8 +573,6 @@ void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
     UNUSED(hi2s);
 	rxHalfComplete = 1;
-    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_4, GPIO_PIN_SET );
-    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_4, GPIO_PIN_RESET );
 }
 
 
@@ -570,7 +581,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	  /* Prevent unused argument(s) compilation warning */
 	  UNUSED(GPIO_Pin);
 }
-
 
 
 /* USER CODE END 4 */

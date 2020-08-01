@@ -163,8 +163,8 @@ int main(void)
 
   setupSynth( &hi2c2 );
 
-  coeffsLeft = low_pass_2khz;
-  coeffsRight = low_pass_2khz;
+  coeffsLeft = plus45Coeffs;
+  coeffsRight = minus45Coeffs;
 
   arm_fir_init_f32(
 		  &arm_inst_left,
@@ -625,8 +625,40 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	  /* Prevent unused argument(s) compilation warning */
 	  UNUSED(GPIO_Pin);
+	  changeSideband();
 }
 
+void changeSideband()
+{
+
+  // Swap upper/lower sideband
+  if ( coeffsLeft == plus45Coeffs )
+  {
+	  coeffsLeft = minus45Coeffs;
+	  coeffsRight = plus45Coeffs;
+  }
+  else
+  {
+	  coeffsRight = minus45Coeffs;
+	  coeffsLeft = plus45Coeffs;
+  }
+
+	  arm_fir_init_f32(
+			  &arm_inst_left,
+			  NUM_TAPS,
+			  coeffsLeft,
+			  &stateLeft[0],
+			  SAMPLES/2
+	  );
+
+	  arm_fir_init_f32(
+			  &arm_inst_right,
+			  NUM_TAPS,
+			  coeffsRight,
+			  &stateRight[0],
+			  SAMPLES/2
+	  );
+}
 
 /* USER CODE END 4 */
 

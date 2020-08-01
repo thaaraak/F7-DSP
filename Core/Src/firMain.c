@@ -67,25 +67,37 @@ volatile int txHalfComplete = 0;
 volatile int rxFullComplete = 0;
 volatile int txFullComplete = 0;
 
-// Delay Line
-#define	DELAY_BUF	20000
-float32_t	delayLeft[DELAY_BUF];
-float32_t	delayRight[DELAY_BUF];
-volatile int delayPtr = 0;
-volatile int t = 0;
-
 // DMA Buffers
 uint16_t rxBuf[BUF_SAMPLES];
 uint16_t txBuf[BUF_SAMPLES];
+
+// DSP Processing buffers for src/dest and left/right. Only
+// need half the SAMPLE size as we will only be processing half the SAMPLE
+// block at any point in time
+
+float32_t	*coeffsLeft;
+float32_t	*coeffsRight;
+float32_t	stateLeft[SAMPLES/2 + NUM_TAPS - 1];
+float32_t	stateRight[SAMPLES/2 + NUM_TAPS - 1];
 
 float32_t	srcLeft[SAMPLES/2];
 float32_t	srcRight[SAMPLES/2];
 float32_t	destLeft[SAMPLES/2];
 float32_t	destRight[SAMPLES/2];
 
-void doEcho( int m );
-void doMultiEcho( int m );
+arm_status stat;
+arm_fir_instance_f32 arm_inst_left;
+arm_fir_instance_f32 arm_inst_right;
 
+void setupSynth( I2C_HandleTypeDef* );
+
+void doPhase( int m );
+
+
+void printUART( char* s )
+{
+	HAL_UART_Transmit(&huart3, (uint8_t *)s, strlen(s), HAL_MAX_DELAY );
+}
 
 /* USER CODE END PV */
 
@@ -147,6 +159,29 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
+  printUART("\r\nBeginning Processing\r\n");
+
+  setupSynth( &hi2c2 );
+
+  coeffsLeft = low_pass_2khz;
+  coeffsRight = low_pass_2khz;
+
+  arm_fir_init_f32(
+		  &arm_inst_left,
+		  NUM_TAPS,
+		  coeffsLeft,
+		  &stateLeft[0],
+		  SAMPLES/2
+  );
+
+  arm_fir_init_f32(
+		  &arm_inst_right,
+		  NUM_TAPS,
+		  coeffsRight,
+		  &stateRight[0],
+		  SAMPLES/2
+  );
+
 
   HAL_I2S_Transmit_DMA(&hi2s3, txBuf, SAMPLES*2 );
   HAL_I2S_Receive_DMA(&hi2s2, rxBuf, SAMPLES*2 );
@@ -155,14 +190,14 @@ int main(void)
   {
 	  if ( rxHalfComplete && txHalfComplete )
 	  {
-		  doEcho(0);
+		  doPhase(0);
 		  rxHalfComplete = 0;
 		  txHalfComplete = 0;
 	  }
 
 	  else if ( rxFullComplete && txFullComplete )
 	  {
-		  doEcho(1);
+		  doPhase(1);
 		  rxFullComplete = 0;
 		  txFullComplete = 0;
 	  }
@@ -507,32 +542,45 @@ static void MX_GPIO_Init(void)
 //
 
 
-void doEcho( int b )
+void doPhase( int b )
 {
 	int startBuf = b * BUF_SAMPLES / 2;
 	int endBuf = startBuf + BUF_SAMPLES / 2;
+
+    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_5, GPIO_PIN_SET );
 
 	int i = 0;
 	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
 	{
 		  srcLeft[i] = ( (rxBuf[pos]<<16)|rxBuf[pos+1] );
 		  srcRight[i] = ( (rxBuf[pos+2]<<16)|rxBuf[pos+3] );
+
 		  i++;
 	}
 
-	i = 0;
-	float32_t delayGain = 0.5;
+    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_4, GPIO_PIN_SET );
 
+	arm_fir_f32	(
+			&arm_inst_left,
+			srcLeft,
+			destLeft,
+			SAMPLES/2
+	);
+
+	arm_fir_f32	(
+			&arm_inst_right,
+			srcLeft,
+			destRight,
+			SAMPLES/2
+	);
+
+    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_4, GPIO_PIN_RESET );
+
+	i = 0;
 	for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
 	  {
-		  int lval = srcLeft[i] + delayGain * delayLeft[delayPtr];
-		  int rval = srcRight[i] + delayGain * delayRight[delayPtr];
-
-		  // Single Echo
-		  delayLeft[delayPtr] = lval;
-		  delayRight[delayPtr] = rval;
-
-		  delayPtr = (delayPtr+1) % DELAY_BUF;
+		  int lval = destLeft[i];
+		  int rval = destRight[i];
 
 		  txBuf[pos] = (lval>>16)&0xFFFF;
 		  txBuf[pos+1] = lval&0xFFFF;
@@ -542,8 +590,9 @@ void doEcho( int b )
 		  i++;
 	  }
 
-}
+    HAL_GPIO_WritePin( GPIOE, GPIO_PIN_5, GPIO_PIN_RESET );
 
+}
 
 void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
